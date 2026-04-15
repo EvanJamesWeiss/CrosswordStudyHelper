@@ -1,0 +1,13 @@
+{
+  "name": "crossword-study-helper",
+  "version": "1.0.0",
+  "description": "Chrome extension to help with studying common crossword clues/answers",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --coverage"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "jest-environment-jsdom": "^29.0.0"
+  }
+}
