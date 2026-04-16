@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Hello World Extension",
+  "name": "Crossword Study Helper",
   "version": "1.0",
-  "description": "My first Chrome extension!",
+  "description": "Crossword Study Helper",
   "action": {
     "default_popup": "popup.html"
   },
