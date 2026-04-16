@@ -1,9 +1,16 @@
 let clues = {};
 
+// Update counter display
+function updateCounter() {
+  const count = Object.keys(clues).length;
+  document.getElementById('counter').textContent = `Clues recorded: ${count}`;
+}
+
 // Load existing clues on initialization
 chrome.storage.local.get(['clues'], (result) => {
   if (result.clues) {
     clues = result.clues;
+    updateCounter();
   }
 });
 
@@ -29,21 +36,72 @@ document.getElementById('recordBtn').addEventListener('click', () => {
           answer: ""
         };
         chrome.storage.local.set({ clues }, () => {
-          const count = Object.keys(clues).length;
-          document.getElementById('status').textContent = `Clue ${key} recorded! Total clues: ${count}`;
+          updateCounter();
+          document.getElementById('status').textContent = `Clue ${key} recorded!`;
         });
       }
     });
   });
 });
 
-document.getElementById('doneBtn').addEventListener('click', () => {
-  const content = JSON.stringify(clues, null, 2);
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'clues.txt';
-  a.click();
-  URL.revokeObjectURL(url);
+document.getElementById('doneBtn').addEventListener('click', async () => {
+  const doneBtn = document.getElementById('doneBtn');
+  const originalText = doneBtn.textContent;
+  doneBtn.disabled = true;
+  doneBtn.textContent = 'Processing...';
+
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    const clueKeys = Object.keys(clues);
+    const tabId = tabs[0].id;
+
+    // Inject content.js first to ensure window.getAnswerFromClueNumber is defined
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        files: ['content.js']
+      });
+    } catch (e) {
+      console.error("Error injecting content script:", e);
+    }
+
+    for (const key of clueKeys) {
+      await new Promise((resolve) => {
+        chrome.scripting.executeScript({
+          target: { tabId },
+          func: async (clueNumber) => {
+            console.log("Getting answer for clue: ", clueNumber);
+            let answer = await window.getAnswerFromClueNumber(clueNumber);
+            console.log("Answer: ", answer);
+            return answer;
+          },
+          args: [key]
+        }, (results) => {
+          if (results && results[0]) {
+            clues[key].answer = results[0].result;
+          }
+          resolve();
+        });
+      });
+    }
+
+    const content = JSON.stringify(clues, null, 2);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'clues.txt';
+    a.click();
+    URL.revokeObjectURL(url);
+
+    doneBtn.disabled = false;
+    doneBtn.textContent = originalText;
+  });
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  clues = {};
+  chrome.storage.local.set({ clues }, () => {
+    updateCounter();
+    document.getElementById('status').textContent = 'Clues list cleared!';
+  });
 });

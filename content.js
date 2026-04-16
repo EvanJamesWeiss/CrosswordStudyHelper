@@ -1,5 +1,30 @@
-console.log('CrosswordStudyHelper content script loaded');
+async function waitForClick(element) {
+  return new Promise(resolve => {
+    element.addEventListener('click', () => {
+      resolve();
+    }, { once: true });
+  });
+}
 
-document.addEventListener('click', () => {
-  alert('hello world');
-});
+async function getAnswerFromClueNumber(clueNumber) {
+  const clueElement = Array.from(document.querySelectorAll('.xwd__clue--label')).find(el => el.textContent.trim() === clueNumber);
+  if (!clueElement) return "";
+
+  const clickPromise = waitForClick(clueElement);
+  clueElement.click();
+  await clickPromise;
+
+  // Wait for the UI to update
+  await new Promise(resolve => setTimeout(resolve, 500));
+
+  const letters = Array.from(document.getElementsByClassName("xwd__cell--highlighted")).map(cell => {
+    const parent = cell.parentElement;
+    const textElement = Array.from(parent.children).find(
+      el => el.tagName.toLowerCase() === "text" && el.getAttribute("text-anchor") === "middle"
+    );
+    return textElement ? textElement.children[0].getHTML() : null;
+  });
+  return letters.join("");
+}
+
+window.getAnswerFromClueNumber = getAnswerFromClueNumber;

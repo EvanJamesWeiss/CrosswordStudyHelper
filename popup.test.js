@@ -5,15 +5,19 @@
 describe('Popup script', () => {
   let recordBtn;
   let doneBtn;
+  let clearBtn;
 
   beforeEach(() => {
     document.body.innerHTML = `
       <button id="recordBtn">Record Clue</button>
       <button id="doneBtn">Done</button>
+      <button id="clearBtn">Clear</button>
+      <div id="counter">Clues recorded: 0</div>
       <div id="status"></div>
     `;
     recordBtn = document.getElementById('recordBtn');
     doneBtn = document.getElementById('doneBtn');
+    clearBtn = document.getElementById('clearBtn');
 
     global.chrome = {
       tabs: {
@@ -50,6 +54,28 @@ describe('Popup script', () => {
     expect(doneBtn.textContent).toBe('Done');
   });
 
+  test('Clear button should exist', () => {
+    require('./popup.js');
+    expect(clearBtn).not.toBeNull();
+    expect(clearBtn.textContent).toBe('Clear');
+  });
+
+  test('Counter should exist and show 0 initially', () => {
+    require('./popup.js');
+    const counter = document.getElementById('counter');
+    expect(counter).not.toBeNull();
+    expect(counter.textContent).toBe('Clues recorded: 0');
+  });
+
+  test('Counter should show correct count when clues are loaded from storage', () => {
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      callback({ clues: { '1A': { clue: 'clue', answer: '' }, '2D': { clue: 'clue2', answer: '' } } });
+    });
+    require('./popup.js');
+    const counter = document.getElementById('counter');
+    expect(counter.textContent).toBe('Clues recorded: 2');
+  });
+
   test('clicking Record Clue should call chrome.scripting.executeScript and handle results', async () => {
     require('./popup.js');
 
@@ -69,9 +95,11 @@ describe('Popup script', () => {
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
     expect(chrome.storage.local.set).toHaveBeenCalled();
 
-    // Verify status message
+    // Verify status message and counter
     const status = document.getElementById('status');
-    expect(status.textContent).toBe('Clue 1A recorded! Total clues: 1');
+    expect(status.textContent).toBe('Clue 1A recorded!');
+    const counter = document.getElementById('counter');
+    expect(counter.textContent).toBe('Clues recorded: 1');
 
     // Verify results are handled
     // Now call with null to test negative path in results callback
@@ -110,13 +138,128 @@ describe('Popup script', () => {
     expect(resultError).toBeNull();
   });
 
-  test('clicking Done should generate a txt file', () => {
+  test('clicking Done should call getAnswerFromClueNumber for each clue and generate a txt file', async () => {
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      callback({ clues: { '1A': { clue: 'The clue', answer: '' } } });
+    });
+
     require('./popup.js');
 
-    // Simulate some recorded clues (we need to trigger the record first or mock the internal state)
-    // For now, let's just test that it calls createObjectURL
+    chrome.tabs.query.mockImplementation((query, callback) => {
+      callback([{ id: 123 }]);
+    });
+
+    chrome.scripting.executeScript.mockImplementation((config, callback) => {
+      // Handle file injection (no callback usually for files, but we mock it)
+      if (config.files) {
+        if (callback) callback();
+        return Promise.resolve();
+      }
+      // Mock result from getAnswerFromClueNumber
+      callback([{ result: 'ANSWER' }]);
+    });
+
+    // We need to wait for the async work inside the click listener
+    // Trigger the click
     doneBtn.click();
+
+    // The click handler is async, so we need to wait for all microtasks to finish
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // Test the internal function used in executeScript for doneBtn
+    let doneScriptFunc;
+    chrome.scripting.executeScript.mock.calls.forEach(call => {
+      if (call[0].args && call[0].args[0] === '1A') {
+        doneScriptFunc = call[0].func;
+      }
+    });
+
+    if (doneScriptFunc) {
+      window.getAnswerFromClueNumber = jest.fn(async () => 'MOCKED_ANSWER');
+      const result = await doneScriptFunc('1A');
+      expect(result).toBe('MOCKED_ANSWER');
+      expect(window.getAnswerFromClueNumber).toHaveBeenCalledWith('1A');
+    }
+
+    expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true }, expect.any(Function));
+    expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        args: ['1A']
+      }),
+      expect.any(Function)
+    );
     expect(global.URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  test('clicking Done should handle missing results from executeScript', async () => {
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      callback({ clues: { '1A': { clue: 'The clue', answer: '' } } });
+    });
+
+    require('./popup.js');
+
+    chrome.tabs.query.mockImplementation((query, callback) => {
+      callback([{ id: 123 }]);
+    });
+
+    chrome.scripting.executeScript.mockImplementation((config, callback) => {
+      if (config.files) {
+        if (callback) callback();
+        return Promise.resolve();
+      }
+      callback(null); // Simulate failure
+    });
+
+    doneBtn.click();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    expect(global.URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  test('clicking Done should handle errors during content script injection', async () => {
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      callback({ clues: { '1A': { clue: 'The clue', answer: '' } } });
+    });
+
+    require('./popup.js');
+
+    chrome.tabs.query.mockImplementation((query, callback) => {
+      callback([{ id: 123 }]);
+    });
+
+    chrome.scripting.executeScript.mockImplementation((config, callback) => {
+      if (config.files) {
+        return Promise.reject(new Error('Injection failed'));
+      }
+      if (callback) callback([{ result: 'ANSWER' }]);
+      return Promise.resolve([{ result: 'ANSWER' }]);
+    });
+
+    const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+    doneBtn.click();
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith('Error injecting content script:', expect.any(Error));
+    expect(global.URL.createObjectURL).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
+  });
+
+  test('clicking Clear should reset clues and update UI', () => {
+    chrome.storage.local.get.mockImplementation((keys, callback) => {
+      callback({ clues: { '1A': { clue: 'clue', answer: '' } } });
+    });
+    require('./popup.js');
+    const counter = document.getElementById('counter');
+    const status = document.getElementById('status');
+    
+    expect(counter.textContent).toBe('Clues recorded: 1');
+
+    clearBtn.click();
+
+    expect(chrome.storage.local.set).toHaveBeenCalledWith({ clues: {} }, expect.any(Function));
+    expect(counter.textContent).toBe('Clues recorded: 0');
+    expect(status.textContent).toBe('Clues list cleared!');
   });
 
   test('should load clues from storage on start', () => {
@@ -135,6 +278,8 @@ describe('Popup script', () => {
 
     recordBtn.click();
     const status = document.getElementById('status');
-    expect(status.textContent).toBe('Clue 3A recorded! Total clues: 2');
+    const counter = document.getElementById('counter');
+    expect(status.textContent).toBe('Clue 3A recorded!');
+    expect(counter.textContent).toBe('Clues recorded: 2');
   });
 });
