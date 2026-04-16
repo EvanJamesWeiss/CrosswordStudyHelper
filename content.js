@@ -28,3 +28,4 @@ async function getAnswerFromClueNumber(clueNumber) {
 }
 
 window.getAnswerFromClueNumber = getAnswerFromClueNumber;
+console.log('CrosswordStudyHelper content script loaded');

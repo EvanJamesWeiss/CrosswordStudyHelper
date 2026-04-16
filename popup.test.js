@@ -35,6 +35,7 @@ describe('Popup script', () => {
     };
 
     // Mock URL.createObjectURL and HTMLAnchorElement.prototype.click
+    global.Blob = jest.fn((content, options) => ({ content, options }));
     global.URL.createObjectURL = jest.fn(() => 'blob:url');
     global.URL.revokeObjectURL = jest.fn();
     HTMLAnchorElement.prototype.click = jest.fn();
@@ -188,6 +189,7 @@ describe('Popup script', () => {
       }),
       expect.any(Function)
     );
+    expect(global.Blob).toHaveBeenCalledWith(['The clue (6);ANSWER'], { type: 'text/plain;charset=utf-8' });
     expect(global.URL.createObjectURL).toHaveBeenCalled();
   });
 
