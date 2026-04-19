@@ -87,14 +87,23 @@ describe('Popup script', () => {
     let scriptFunc;
     chrome.scripting.executeScript.mockImplementation((config, callback) => {
       scriptFunc = config.func;
-      callback([{ result: { key: '1A', clueText: 'The clue' } }]);
+      callback([{ result: { key: '1A', clueText: 'The clue', direction: 'Across' } }]);
     });
 
     recordBtn.click();
 
     expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true }, expect.any(Function));
     expect(chrome.scripting.executeScript).toHaveBeenCalled();
-    expect(chrome.storage.local.set).toHaveBeenCalled();
+    expect(chrome.storage.local.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        clues: expect.objectContaining({
+          '1A': expect.objectContaining({
+            direction: 'Across'
+          })
+        })
+      }),
+      expect.any(Function)
+    );
 
     // Verify status message and counter
     const status = document.getElementById('status');
@@ -122,16 +131,21 @@ describe('Popup script', () => {
     // Test the internal function used in executeScript
     // Mock the DOM for the internal function
     document.body.innerHTML = `
-      <div class="xwd__clue--selected">
-        <span>1A</span>
-        <span>The clue</span>
+      <div>
+        <div>Across</div>
+        <div>
+          <div class="xwd__clue--selected">
+            <span>1A</span>
+            <span>The clue</span>
+          </div>
+        </div>
       </div>
     `;
     // We need to mock getHTML as it's not in standard JSDOM
     Element.prototype.getHTML = function() { return this.innerHTML; };
 
     const result = scriptFunc();
-    expect(result).toEqual({ key: '1A', clueText: 'The clue' });
+    expect(result).toEqual({ key: '1A', clueText: 'The clue', direction: 'Across' });
 
     // Test error case in internal function
     document.body.innerHTML = '';
@@ -141,7 +155,7 @@ describe('Popup script', () => {
 
   test('clicking Done should call getAnswerFromClueNumber for each clue and generate a txt file', async () => {
     chrome.storage.local.get.mockImplementation((keys, callback) => {
-      callback({ clues: { '1A': { clue: 'The clue', answer: '' } } });
+      callback({ clues: { '1A': { clue: 'The clue', answer: '', direction: 'Across' } } });
     });
 
     require('./popup.js');
@@ -177,15 +191,15 @@ describe('Popup script', () => {
 
     if (doneScriptFunc) {
       window.getAnswerFromClueNumber = jest.fn(async () => 'MOCKED_ANSWER');
-      const result = await doneScriptFunc('1A');
+      const result = await doneScriptFunc('1A', 'Across');
       expect(result).toBe('MOCKED_ANSWER');
-      expect(window.getAnswerFromClueNumber).toHaveBeenCalledWith('1A');
+      expect(window.getAnswerFromClueNumber).toHaveBeenCalledWith('1A', 'Across');
     }
 
     expect(chrome.tabs.query).toHaveBeenCalledWith({ active: true, currentWindow: true }, expect.any(Function));
     expect(chrome.scripting.executeScript).toHaveBeenCalledWith(
       expect.objectContaining({
-        args: ['1A']
+        args: ['1A', 'Across']
       }),
       expect.any(Function)
     );

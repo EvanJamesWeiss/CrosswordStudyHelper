@@ -62,7 +62,7 @@ describe('Content script', () => {
     });
 
     // Call the global function
-    const promise = window.getAnswerFromClueNumber("1");
+    const promise = window.getAnswerFromClueNumber("1", "Across");
 
     // Fast-forward time for both the click event (if needed) and the UI wait
     // Since we are using fake timers, and waitForClick is a promise,
@@ -73,6 +73,48 @@ describe('Content script', () => {
 
     expect(clickSpy).toHaveBeenCalled();
     expect(result).toBe("AB");
+    jest.useRealTimers();
+  });
+
+  test('getAnswerFromClueNumber should handle ambiguous clue numbers with direction', async () => {
+    require('./content.js');
+    jest.useFakeTimers();
+
+    document.body.innerHTML = `
+      <div class="xwd__clue--label">5</div>
+      <div class="xwd__clue--label">5</div>
+      <div class="parent">
+        <div class="xwd__cell--highlighted"></div>
+        <text text-anchor="middle"><span>X</span></text>
+      </div>
+    `;
+
+    const labels = document.querySelectorAll('.xwd__clue--label');
+    labels.forEach(label => {
+      label.click = jest.fn(function() {
+        this.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      label.getHTML = function() { return this.innerHTML; };
+    });
+    
+    // Mock getHTML for spans
+    const spans = document.querySelectorAll('span');
+    spans.forEach(span => {
+      span.getHTML = function() { return this.innerHTML; };
+    });
+
+    // Test Across (index 0)
+    const promiseAcross = window.getAnswerFromClueNumber("5", "Across");
+    await jest.runAllTimersAsync();
+    await promiseAcross;
+    expect(labels[0].click).toHaveBeenCalled();
+
+    // Test Down (index 1)
+    const promiseDown = window.getAnswerFromClueNumber("5", "Down");
+    await jest.runAllTimersAsync();
+    await promiseDown;
+    expect(labels[1].click).toHaveBeenCalled();
+
     jest.useRealTimers();
   });
 
@@ -88,7 +130,7 @@ describe('Content script', () => {
       </div>
     `;
 
-    const promise = window.getAnswerFromClueNumber("3");
+    const promise = window.getAnswerFromClueNumber("3", "Across");
     await jest.runAllTimersAsync();
     const result = await promise;
     expect(result).toBe("");
@@ -98,7 +140,7 @@ describe('Content script', () => {
   test('getAnswerFromClueNumber should return empty string if clue label is not found', async () => {
     require('./content.js');
     document.body.innerHTML = '';
-    const result = await window.getAnswerFromClueNumber("99");
+    const result = await window.getAnswerFromClueNumber("99", "Across");
     expect(result).toBe("");
   });
 });

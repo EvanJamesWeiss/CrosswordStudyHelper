@@ -23,17 +23,19 @@ document.getElementById('recordBtn').addEventListener('click', () => {
           const selectedClue = document.getElementsByClassName("xwd__clue--selected")[0];
           const key = selectedClue.children[0].getHTML();
           const clueText = selectedClue.children[1].getHTML();
-          return { key, clueText };
+          const direction = selectedClue.parentElement.parentElement.children[0].getHTML();
+          return { key, clueText, direction };
         } catch (e) {
           return null;
         }
       }
     }, (results) => {
       if (results && results[0] && results[0].result) {
-        const { key, clueText } = results[0].result;
+        const { key, clueText, direction } = results[0].result;
         clues[key] = {
           clue: clueText,
-          answer: ""
+          answer: "",
+          direction: direction
         };
         chrome.storage.local.set({ clues }, () => {
           updateCounter();
@@ -68,13 +70,13 @@ document.getElementById('doneBtn').addEventListener('click', async () => {
       await new Promise((resolve) => {
         chrome.scripting.executeScript({
           target: { tabId },
-          func: async (clueNumber) => {
-            console.log("Getting answer for clue: ", clueNumber);
-            let answer = await window.getAnswerFromClueNumber(clueNumber);
+          func: async (clueNumber, direction) => {
+            console.log("Getting answer for clue: ", clueNumber, direction);
+            let answer = await window.getAnswerFromClueNumber(clueNumber, direction);
             console.log("Answer: ", answer);
             return answer;
           },
-          args: [key]
+          args: [key, clues[key].direction]
         }, (results) => {
           if (results && results[0]) {
             clues[key].answer = results[0].result;

@@ -6,8 +6,17 @@ async function waitForClick(element) {
   });
 }
 
-async function getAnswerFromClueNumber(clueNumber) {
-  const clueElement = Array.from(document.querySelectorAll('.xwd__clue--label')).find(el => el.textContent.trim() === clueNumber);
+async function getAnswerFromClueNumber(clueNumber, direction) {
+  const matchingLabels = Array.from(document.querySelectorAll('.xwd__clue--label')).filter(el => el.textContent.trim() === clueNumber);
+  
+  let clueElement;
+  if (matchingLabels.length > 1) {
+    const index = direction === "Across" ? 0 : 1;
+    clueElement = matchingLabels[index];
+  } else {
+    clueElement = matchingLabels[0];
+  }
+
   if (!clueElement) return "";
 
   const clickPromise = waitForClick(clueElement);
